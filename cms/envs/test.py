@@ -15,6 +15,7 @@ sessions. Assumes structure:
 from .common import *
 import os
 from path import path
+from warnings import filterwarnings
 
 # Nose Test Runner
 INSTALLED_APPS += ('django_nose',)
@@ -48,12 +49,12 @@ MODULESTORE_OPTIONS = {
     'db': 'test_xmodule',
     'collection': 'test_modulestore',
     'fs_root': TEST_ROOT / "data",
-    'render_template': 'mitxmako.shortcuts.render_to_string'
+    'render_template': 'mitxmako.shortcuts.render_to_string',
 }
 
 MODULESTORE = {
     'default': {
-        'ENGINE': 'xmodule.modulestore.mongo.DraftMongoModuleStore',
+        'ENGINE': 'xmodule.modulestore.draft.DraftModuleStore',
         'OPTIONS': MODULESTORE_OPTIONS
     },
     'direct': {
@@ -61,7 +62,11 @@ MODULESTORE = {
         'OPTIONS': MODULESTORE_OPTIONS
     },
     'draft': {
-        'ENGINE': 'xmodule.modulestore.mongo.DraftMongoModuleStore',
+        'ENGINE': 'xmodule.modulestore.draft.DraftModuleStore',
+        'OPTIONS': MODULESTORE_OPTIONS
+    },
+    'split': {
+        'ENGINE': 'xmodule.modulestore.split_mongo.SplitMongoModuleStore',
         'OPTIONS': MODULESTORE_OPTIONS
     }
 }
@@ -70,7 +75,7 @@ CONTENTSTORE = {
     'ENGINE': 'xmodule.contentstore.mongo.MongoContentStore',
     'OPTIONS': {
         'host': 'localhost',
-        'db': 'test_xmodule',
+        'db': 'test_xcontent',
     },
     # allow for additional options that can be keyed on a name, e.g. 'trashcan'
     'ADDITIONAL_OPTIONS': {
@@ -120,6 +125,9 @@ CACHES = {
     }
 }
 
+# hide ratelimit warnings while running tests
+filterwarnings('ignore', message='No request passed to the backend, unable to rate-limit')
+
 ################################# CELERY ######################################
 
 CELERY_ALWAYS_EAGER = True
@@ -140,3 +148,6 @@ SEGMENT_IO_KEY = '***REMOVED***'
 MITX_FEATURES['STUDIO_NPS_SURVEY'] = False
 
 MITX_FEATURES['ENABLE_SERVICE_STATUS'] = True
+
+# This is to disable a test under the common directory that will not pass when run under CMS
+MITX_FEATURES['DISABLE_PASSWORD_RESET_EMAIL_TEST'] = True
