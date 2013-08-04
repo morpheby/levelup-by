@@ -45,7 +45,7 @@ class @Sequence
     new_progress = "NA"
     _this = this
     $('.problems-wrapper').each (index) ->
-      progress = $(this).attr 'progress'
+      progress = $(this).data 'progress_status'
       new_progress = _this.mergeProgress progress, new_progress
 
     @progressTable[@position] = new_progress
@@ -87,6 +87,9 @@ class @Sequence
         modx_full_url = @modx_url + '/' + @id + '/goto_position'
         $.postWithPrefix modx_full_url, position: new_position
 
+      # On Sequence change, fire custom event "sequence:change" on element.
+      # Added for aborting video bufferization, see ../videoalpha/10_main.js
+      @el.trigger "sequence:change"
       @mark_active new_position
       @$('#seq_content').html @contents.eq(new_position - 1).text()
       XModule.loadModules(@$('#seq_content'))
@@ -111,7 +114,15 @@ class @Sequence
     if (1 <= new_position) and (new_position <= @num_contents)
       Logger.log "seq_goto", old: @position, new: new_position, id: @id
 
-      # On Sequence chage, destroy any existing polling thread
+      analytics.pageview @id
+
+      # navigation by clicking the tab directly
+      analytics.track "Accessed Sequential Directly",
+        sequence_id: @id
+        current_sequential: @position
+        target_sequential: new_position
+
+      # On Sequence change, destroy any existing polling thread
       #   for queued submissions, see ../capa/display.coffee
       if window.queuePollerID
         window.clearTimeout(window.queuePollerID)
@@ -125,12 +136,30 @@ class @Sequence
     event.preventDefault()
     new_position = @position + 1
     Logger.log "seq_next", old: @position, new: new_position, id: @id
+
+    analytics.pageview @id
+
+    # navigation using the next arrow
+    analytics.track "Accessed Next Sequential",
+      sequence_id: @id
+      current_sequential: @position
+      target_sequential: new_position
+
     @render new_position
 
   previous: (event) =>
     event.preventDefault()
     new_position = @position - 1
     Logger.log "seq_prev", old: @position, new: new_position, id: @id
+
+    analytics.pageview @id
+
+    # navigation using the previous arrow
+    analytics.track "Accessed Previous Sequential",
+      sequence_id: @id
+      current_sequential: @position
+      target_sequential: new_position
+
     @render new_position
 
   link_for: (position) ->

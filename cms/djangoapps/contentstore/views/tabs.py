@@ -1,3 +1,6 @@
+"""
+Views related to course tabs
+"""
 from access import has_access
 from util.json_request import expect_json
 
@@ -10,18 +13,20 @@ from mitxmako.shortcuts import render_to_response
 from xmodule.modulestore import Location
 from xmodule.modulestore.inheritance import own_metadata
 from xmodule.modulestore.django import modulestore
-from ..utils import get_course_for_item
+from ..utils import get_course_for_item, get_modulestore
 from .access import get_location_and_verify_access
 
-__all__ = ['edit_tabs', 'reorder_static_tabs', 'static_pages', 'edit_static']
+__all__ = ['edit_tabs', 'reorder_static_tabs', 'static_pages']
 
 
 def initialize_course_tabs(course):
-    # set up the default tabs
-    # I've added this because when we add static tabs, the LMS either expects a None for the tabs list or
-    # at least a list populated with the minimal times
-    # @TODO: I don't like the fact that the presentation tier is away of these data related constraints, let's find a better
-    # place for this. Also rather than using a simple list of dictionaries a nice class model would be helpful here
+    """
+    set up the default tabs
+    I've added this because when we add static tabs, the LMS either expects a None for the tabs list or
+    at least a list populated with the minimal times
+    @TODO: I don't like the fact that the presentation tier is away of these data related constraints, let's find a better
+    place for this. Also rather than using a simple list of dictionaries a nice class model would be helpful here
+    """
 
     # This logic is repeated in xmodule/modulestore/tests/factories.py
     # so if you change anything here, you need to also change it there.
@@ -37,6 +42,7 @@ def initialize_course_tabs(course):
 @login_required
 @expect_json
 def reorder_static_tabs(request):
+    "Order the static tabs in the requested order"
     tabs = request.POST['tabs']
     course = get_course_for_item(tabs[0])
 
@@ -74,6 +80,9 @@ def reorder_static_tabs(request):
 
     # OK, re-assemble the static tabs in the new order
     course.tabs = reordered_tabs
+    # Save the data that we've just changed to the underlying
+    # MongoKeyValueStore before we update the mongo datastore.
+    course.save()
     modulestore('direct').update_metadata(course.location, own_metadata(course))
     return HttpResponse()
 
@@ -81,8 +90,10 @@ def reorder_static_tabs(request):
 @login_required
 @ensure_csrf_cookie
 def edit_tabs(request, org, course, coursename):
+    "Edit tabs"
     location = ['i4x', org, course, 'course', coursename]
-    course_item = modulestore().get_item(location)
+    store = get_modulestore(location)
+    course_item = store.get_item(location)
 
     # check that logged in user has permissions to this item
     if not has_access(request.user, location):
@@ -108,7 +119,6 @@ def edit_tabs(request, org, course, coursename):
     ]
 
     return render_to_response('edit-tabs.html', {
-        'active_tab': 'pages',
         'context_course': course_item,
         'components': components
     })
@@ -117,16 +127,12 @@ def edit_tabs(request, org, course, coursename):
 @login_required
 @ensure_csrf_cookie
 def static_pages(request, org, course, coursename):
+    "Static pages view"
 
     location = get_location_and_verify_access(request, org, course, coursename)
 
     course = modulestore().get_item(location)
 
     return render_to_response('static-pages.html', {
-        'active_tab': 'pages',
         'context_course': course,
     })
-
-
-def edit_static(request, org, course, coursename):
-    return render_to_response('edit-static-page.html', {})

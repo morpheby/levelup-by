@@ -12,7 +12,7 @@ import time
 from django.http import Http404
 
 from xmodule.x_module import XModule
-from xmodule.raw_module import RawDescriptor
+from xmodule.raw_module import EmptyDataRawDescriptor
 from xmodule.editing_module import MetadataOnlyEditingDescriptor
 from xblock.core import Integer, Scope, String, Float, Boolean
 
@@ -21,6 +21,19 @@ log = logging.getLogger(__name__)
 
 class VideoFields(object):
     """Fields for `VideoModule` and `VideoDescriptor`."""
+    display_name = String(
+        display_name="Display Name",
+        help="This name appears in the horizontal navigation at the top of the page.",
+        scope=Scope.settings,
+        # it'd be nice to have a useful default but it screws up other things; so,
+        # use display_name_with_default for those
+        default="Video"
+    )
+    data = String(
+        help="XML data for the problem",
+        default='',
+        scope=Scope.content
+    )
     position = Integer(help="Current position in the video", scope=Scope.user_state, default=0)
     show_captions = Boolean(help="This controls whether or not captions are shown by default.", display_name="Show Captions", scope=Scope.settings, default=True)
     youtube_id_1_0 = String(help="This is the Youtube ID reference for the normal speed video.", display_name="Default Speed", scope=Scope.settings, default="OEoXaMPEzfM")
@@ -54,9 +67,9 @@ class VideoModule(VideoFields, XModule):
     def __init__(self, *args, **kwargs):
         XModule.__init__(self, *args, **kwargs)
 
-    def handle_ajax(self, dispatch, get):
+    def handle_ajax(self, dispatch, data):
         """This is not being called right now and we raise 404 error."""
-        log.debug(u"GET {0}".format(get))
+        log.debug(u"GET {0}".format(data))
         log.debug(u"DISPATCH {0}".format(dispatch))
         raise Http404()
 
@@ -84,9 +97,15 @@ class VideoModule(VideoFields, XModule):
 
 class VideoDescriptor(VideoFields,
                       MetadataOnlyEditingDescriptor,
-                      RawDescriptor):
+                      EmptyDataRawDescriptor):
     module_class = VideoModule
-    template_dir_name = "video"
+
+    def __init__(self, *args, **kwargs):
+        super(VideoDescriptor, self).__init__(*args, **kwargs)
+        # If we don't have a `youtube_id_1_0`, this is an XML course
+        # and we parse out the fields.
+        if self.data and 'youtube_id_1_0' not in self._model_data:
+            _parse_video_xml(self, self.data)
 
     @property
     def non_editable_metadata_fields(self):
@@ -108,45 +127,55 @@ class VideoDescriptor(VideoFields,
             url identifiers
         """
         video = super(VideoDescriptor, cls).from_xml(xml_data, system, org, course)
-        xml = etree.fromstring(xml_data)
-
-        display_name = xml.get('display_name')
-        if display_name:
-            video.display_name = display_name
-
-        youtube = xml.get('youtube')
-        if youtube:
-            speeds = _parse_youtube(youtube)
-            if speeds['0.75']:
-                video.youtube_id_0_75 = speeds['0.75']
-            if speeds['1.00']:
-                video.youtube_id_1_0 = speeds['1.00']
-            if speeds['1.25']:
-                video.youtube_id_1_25 = speeds['1.25']
-            if speeds['1.50']:
-                video.youtube_id_1_5 = speeds['1.50']
-
-        show_captions = xml.get('show_captions')
-        if show_captions:
-            video.show_captions = json.loads(show_captions)
-
-        source = _get_first_external(xml, 'source')
-        if source:
-            video.source = source
-
-        track = _get_first_external(xml, 'track')
-        if track:
-            video.track = track
-
-        start_time = _parse_time(xml.get('from'))
-        if start_time:
-            video.start_time = start_time
-
-        end_time = _parse_time(xml.get('to'))
-        if end_time:
-            video.end_time = end_time
-
+        _parse_video_xml(video, video.data)
         return video
+
+
+def _parse_video_xml(video, xml_data):
+    """
+    Parse video fields out of xml_data. The fields are set if they are
+    present in the XML.
+    """
+    if not xml_data:
+        return
+
+    xml = etree.fromstring(xml_data)
+
+    display_name = xml.get('display_name')
+    if display_name:
+        video.display_name = display_name
+
+    youtube = xml.get('youtube')
+    if youtube:
+        speeds = _parse_youtube(youtube)
+        if speeds['0.75']:
+            video.youtube_id_0_75 = speeds['0.75']
+        if speeds['1.00']:
+            video.youtube_id_1_0 = speeds['1.00']
+        if speeds['1.25']:
+            video.youtube_id_1_25 = speeds['1.25']
+        if speeds['1.50']:
+            video.youtube_id_1_5 = speeds['1.50']
+
+    show_captions = xml.get('show_captions')
+    if show_captions:
+        video.show_captions = json.loads(show_captions)
+
+    source = _get_first_external(xml, 'source')
+    if source:
+        video.source = source
+
+    track = _get_first_external(xml, 'track')
+    if track:
+        video.track = track
+
+    start_time = _parse_time(xml.get('from'))
+    if start_time:
+        video.start_time = start_time
+
+    end_time = _parse_time(xml.get('to'))
+    if end_time:
+        video.end_time = end_time
 
 
 def _get_first_external(xmltree, tag):
