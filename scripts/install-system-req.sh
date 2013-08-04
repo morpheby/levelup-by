@@ -47,10 +47,18 @@ case `uname -s` in
                 sudo apt-get -y install ruby-rvm
                 # install packages listed in APT_PKGS_FILE
                 cat $APT_PKGS_FILE | xargs sudo apt-get -y install
+                on;;
+            Schrödinger’sCat)
+                sudo yum -y install gfortran
+                sudo yum -y install graphviz graphviz-devel
+                sudo yum -y install atlas atlas-devel
+                sudo yum -y install ruby rvm rubygem-bundler
+                sudo yum -y install python python-virtualenv python-virtualenvwrapper
                 ;;
             *)
-                error "Unsupported distribution - $distro"
-                exit 1
+                error "We would hope yuo installed 'gfortran', 'grpahviz, libgraphviz-devel, graphviz-dev', 'libatlas-dev, libblas-dev', 'ruby-rvm' for your $distro"
+                add_pkgs=`cat $APT_PKGS_FILE`
+                error "Also it is advised to install $addpkgs"
                ;;
         esac
         ;;
