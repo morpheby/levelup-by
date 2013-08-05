@@ -5,19 +5,20 @@ from django.conf.urls import patterns, include, url
 # pylint: disable=W0611
 from . import one_time_startup
 
-# Uncomment the next two lines to enable the admin:
-# from django.contrib import admin
-# admin.autodiscover()
+# There is a course creators admin table.
+from ratelimitbackend import admin
+admin.autodiscover()
 
 urlpatterns = ('',  # nopep8
     url(r'^$', 'contentstore.views.howitworks', name='homepage'),
     url(r'^listing', 'contentstore.views.index', name='index'),
+    url(r'^request_course_creator$', 'contentstore.views.request_course_creator', name='request_course_creator'),
     url(r'^edit/(?P<location>.*?)$', 'contentstore.views.edit_unit', name='edit_unit'),
     url(r'^subsection/(?P<location>.*?)$', 'contentstore.views.edit_subsection', name='edit_subsection'),
     url(r'^preview_component/(?P<location>.*?)$', 'contentstore.views.preview_component', name='preview_component'),
     url(r'^save_item$', 'contentstore.views.save_item', name='save_item'),
     url(r'^delete_item$', 'contentstore.views.delete_item', name='delete_item'),
-    url(r'^clone_item$', 'contentstore.views.clone_item', name='clone_item'),
+    url(r'^create_item$', 'contentstore.views.create_item', name='create_item'),
     url(r'^create_draft$', 'contentstore.views.create_draft', name='create_draft'),
     url(r'^publish_draft$', 'contentstore.views.publish_draft', name='publish_draft'),
     url(r'^unpublish_unit$', 'contentstore.views.unpublish_unit', name='unpublish_unit'),
@@ -39,14 +40,12 @@ urlpatterns = ('',  # nopep8
     url(r'^(?P<org>[^/]+)/(?P<course>[^/]+)/course/(?P<coursename>[^/]+)/upload_asset$',
         'contentstore.views.upload_asset', name='upload_asset'),
 
+    url(r'^(?P<org>[^/]+)/(?P<course>[^/]+)/team/(?P<name>[^/]+)$',
+        'contentstore.views.manage_users', name='manage_users'),
+    url(r'^(?P<org>[^/]+)/(?P<course>[^/]+)/team/(?P<name>[^/]+)/(?P<email>[^/]+)$',
+        'contentstore.views.course_team_user', name='course_team_user'),
 
-    url(r'^manage_users/(?P<location>.*?)$', 'contentstore.views.manage_users', name='manage_users'),
-    url(r'^add_user/(?P<location>.*?)$',
-        'contentstore.views.add_user', name='add_user'),
-    url(r'^remove_user/(?P<location>.*?)$',
-        'contentstore.views.remove_user', name='remove_user'),
-    url(r'^(?P<org>[^/]+)/(?P<course>[^/]+)/course/(?P<name>[^/]+)/remove_user$',
-        'contentstore.views.remove_user', name='remove_user'),
+
     url(r'^(?P<org>[^/]+)/(?P<course>[^/]+)/info/(?P<name>[^/]+)$',
         'contentstore.views.course_info', name='course_info'),
     url(r'^(?P<org>[^/]+)/(?P<course>[^/]+)/course_info/updates/(?P<provided_id>.*)$',
@@ -72,8 +71,6 @@ urlpatterns = ('',  # nopep8
     url(r'^pages/(?P<org>[^/]+)/(?P<course>[^/]+)/course/(?P<coursename>[^/]+)$',
         'contentstore.views.static_pages',
         name='static_pages'),
-    url(r'^edit_static/(?P<org>[^/]+)/(?P<course>[^/]+)/course/(?P<coursename>[^/]+)$',
-        'contentstore.views.edit_static', name='edit_static'),
     url(r'^edit_tabs/(?P<org>[^/]+)/(?P<course>[^/]+)/course/(?P<coursename>[^/]+)$',
         'contentstore.views.edit_tabs', name='edit_tabs'),
 
@@ -81,6 +78,12 @@ urlpatterns = ('',  # nopep8
         'contentstore.views.asset_index', name='asset_index'),
     url(r'^(?P<org>[^/]+)/(?P<course>[^/]+)/assets/(?P<name>[^/]+)/remove$',
         'contentstore.views.assets.remove_asset', name='remove_asset'),
+    url(r'^(?P<org>[^/]+)/(?P<course>[^/]+)/textbooks/(?P<name>[^/]+)$',
+        'contentstore.views.textbook_index', name='textbook_index'),
+    url(r'^(?P<org>[^/]+)/(?P<course>[^/]+)/textbooks/(?P<name>[^/]+)/new$',
+        'contentstore.views.create_textbook', name='create_textbook'),
+    url(r'^(?P<org>[^/]+)/(?P<course>[^/]+)/textbooks/(?P<name>[^/]+)/(?P<tid>\d[^/]*)$',
+        'contentstore.views.textbook_by_id', name='textbook_by_id'),
 
     # this is a generic method to return the data/metadata associated with a xmodule
     url(r'^module_info/(?P<module_location>.*)$',
@@ -93,9 +96,6 @@ urlpatterns = ('',  # nopep8
 
     url(r'^not_found$', 'contentstore.views.not_found', name='not_found'),
     url(r'^server_error$', 'contentstore.views.server_error', name='server_error'),
-
-    url(r'^(?P<org>[^/]+)/(?P<course>[^/]+)/assets/(?P<name>[^/]+)$',
-        'contentstore.views.asset_index', name='asset_index'),
 
     # temporary landing page for edge
     url(r'^edge$', 'contentstore.views.edge', name='edge'),
@@ -137,17 +137,31 @@ urlpatterns += (
 
 
 if settings.ENABLE_JASMINE:
-    # # Jasmine
-    urlpatterns = urlpatterns + (url(r'^_jasmine/', include('django_jasmine.urls')),)
-
+    urlpatterns += (url(r'^_jasmine/', include('django_jasmine.urls')),)
 
 if settings.MITX_FEATURES.get('ENABLE_SERVICE_STATUS'):
     urlpatterns += (
         url(r'^status/', include('service_status.urls')),
     )
 
+urlpatterns += (url(r'^admin/', include(admin.site.urls)),)
+
+# enable automatic login
+if settings.MITX_FEATURES.get('AUTOMATIC_AUTH_FOR_LOAD_TESTING'):
+    urlpatterns += (
+        url(r'^auto_auth$', 'student.views.auto_auth'),
+    )
+
+if settings.DEBUG:
+    try:
+        from .urls_dev import urlpatterns as dev_urlpatterns
+        urlpatterns += dev_urlpatterns
+    except ImportError:
+        pass
+
 urlpatterns = patterns(*urlpatterns)
 
 # Custom error pages
+#pylint: disable=C0103
 handler404 = 'contentstore.views.render_404'
 handler500 = 'contentstore.views.render_500'

@@ -35,22 +35,25 @@ case `uname -s` in
             squeeze|wheezy|jessie|maya|lisa|olivia|nadia|natty|oneiric|precise|quantal|raring)
                 output "Installing Debian family requirements"
 
-                # DEBIAN_FRONTEND=noninteractive is required for silent mysql-server installation
-                export DEBIAN_FRONTEND=noninteractive
-
                 # add repositories
                 cat $APT_REPOS_FILE | xargs -n 1 sudo add-apt-repository -y
-                sudo apt-get -y update
-                sudo apt-get -y install gfortran
-                sudo apt-get -y install graphviz libgraphviz-dev graphviz-dev
-                sudo apt-get -y install libatlas-dev libblas-dev 
-                sudo apt-get -y install ruby-rvm
+                sudo apt-get -yq update
+                sudo DEBIAN_FRONTEND=noninteractive apt-get -yq install gfortran graphviz \
+                            libgraphviz-dev graphviz-dev libatlas-dev libblas-dev
                 # install packages listed in APT_PKGS_FILE
                 cat $APT_PKGS_FILE | xargs sudo apt-get -y install
+                on;;
+            Schrödinger’sCat)
+                sudo yum -y install gfortran
+                sudo yum -y install graphviz graphviz-devel
+                sudo yum -y install atlas atlas-devel
+                sudo yum -y install ruby rvm rubygem-bundler
+                sudo yum -y install python python-virtualenv python-virtualenvwrapper
                 ;;
             *)
-                error "Unsupported distribution - $distro"
-                exit 1
+                error "We would hope yuo installed 'gfortran', 'grpahviz, libgraphviz-devel, graphviz-dev', 'libatlas-dev, libblas-dev', 'ruby-rvm' for your $distro"
+                add_pkgs=`cat $APT_PKGS_FILE`
+                error "Also it is advised to install $addpkgs"
                ;;
         esac
         ;;

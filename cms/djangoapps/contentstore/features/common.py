@@ -4,17 +4,16 @@
 from lettuce import world, step
 from nose.tools import assert_true
 
-from auth.authz import get_user_by_email
+from auth.authz import get_user_by_email, get_course_groupname_for_role
 
 from selenium.webdriver.common.keys import Keys
 import time
+from django.contrib.auth.models import Group
 
 from logging import getLogger
 logger = getLogger(__name__)
 
-_COURSE_NAME = 'Robot Super Course'
-_COURSE_NUM = '999'
-_COURSE_ORG = 'MITx'
+from terrain.browser import reset_data
 
 ###########  STEP HELPERS ##############
 
@@ -55,6 +54,56 @@ def i_have_opened_a_new_course(_step):
     open_new_course()
 
 
+@step('(I select|s?he selects) the new course')
+def select_new_course(_step, whom):
+    course_link_xpath = '//div[contains(@class, "courses")]//a[contains(@class, "class-link")]//span[contains(., "{name}")]/..'.format(
+        name="Robot Super Course")
+    element = world.browser.find_by_xpath(course_link_xpath)
+    element.click()
+
+
+@step(u'I press the "([^"]*)" notification button$')
+def press_the_notification_button(_step, name):
+    css = 'a.action-%s' % name.lower()
+
+    # The button was clicked if either the notification bar is gone,
+    # or we see an error overlaying it (expected for invalid inputs).
+    def button_clicked():
+        confirmation_dismissed = world.is_css_not_present('.is-shown.wrapper-notification-warning')
+        error_showing = world.is_css_present('.is-shown.wrapper-notification-error')
+        return confirmation_dismissed or error_showing
+
+    world.css_click(css, success_condition=button_clicked), '%s button not clicked after 5 attempts.' % name
+
+
+@step('I change the "(.*)" field to "(.*)"$')
+def i_change_field_to_value(_step, field, value):
+    field_css = '#%s' % '-'.join([s.lower() for s in field.split()])
+    ele = world.css_find(field_css).first
+    ele.fill(value)
+    ele._element.send_keys(Keys.ENTER)
+
+
+@step('I reset the database')
+def reset_the_db(_step):
+    """
+    When running Lettuce tests using examples (i.e. "Confirmation is
+    shown on save" in course-settings.feature), the normal hooks
+    aren't called between examples. reset_data should run before each
+    scenario to flush the test database. When this doesn't happen we
+    get errors due to trying to insert a non-unique entry. So instead,
+    we delete the database manually. This has the effect of removing
+    any users and courses that have been created during the test run.
+    """
+    reset_data(None)
+
+
+@step('I see a confirmation that my changes have been saved')
+def i_see_a_confirmation(step):
+    confirmation_css = '#alert-confirmation'
+    assert world.is_css_present(confirmation_css)
+
+
 ####### HELPER FUNCTIONS ##############
 def open_new_course():
     world.clear_courses()
@@ -78,14 +127,18 @@ def create_studio_user(
     registration.register(studio_user)
     registration.activate()
 
+    return studio_user
+
 
 def fill_in_course_info(
-        name=_COURSE_NAME,
-        org=_COURSE_ORG,
-        num=_COURSE_NUM):
+        name='Robot Super Course',
+        org='MITx',
+        num='101',
+        run='2013_Spring'):
     world.css_fill('.new-course-name', name)
     world.css_fill('.new-course-org', org)
     world.css_fill('.new-course-number', num)
+    world.css_fill('.new-course-run', run)
 
 
 def log_into_studio(
@@ -100,22 +153,30 @@ def log_into_studio(
     world.is_css_present(signin_css)
     world.css_click(signin_css)
 
-    login_form = world.browser.find_by_css('form#login_form')
-    login_form.find_by_name('email').fill(email)
-    login_form.find_by_name('password').fill(password)
-    login_form.find_by_name('submit').click()
-
+    def fill_login_form():
+        login_form = world.browser.find_by_css('form#login_form')
+        login_form.find_by_name('email').fill(email)
+        login_form.find_by_name('password').fill(password)
+        login_form.find_by_name('submit').click()
+    world.retry_on_exception(fill_login_form)
     assert_true(world.is_css_present('.new-course-button'))
+    world.scenario_dict['USER'] = get_user_by_email(email)
 
 
 def create_a_course():
-    world.CourseFactory.create(org=_COURSE_ORG, course=_COURSE_NUM, display_name=_COURSE_NAME)
+    course = world.CourseFactory.create(org='MITx', course='999', display_name='Robot Super Course')
+    world.scenario_dict['COURSE'] = course
+
+    user = world.scenario_dict.get("USER")
+    if not user:
+        user = get_user_by_email('robot+studio@edx.org')
 
     # Add the user to the instructor group of the course
     # so they will have the permissions to see it in studio
-    course = world.GroupFactory.create(name='instructor_MITx/{course_num}/{course_name}'.format(course_num=_COURSE_NUM, course_name=_COURSE_NAME.replace(" ", "_")))
-    user = get_user_by_email('robot+studio@edx.org')
-    user.groups.add(course)
+    for role in ("staff", "instructor"):
+        groupname = get_course_groupname_for_role(course.location, role)
+        group, __ = Group.objects.get_or_create(name=groupname)
+        user.groups.add(group)
     user.save()
     world.browser.reload()
 
@@ -161,8 +222,9 @@ def set_date_and_time(date_css, desired_date, time_css, desired_time):
 def i_created_a_video_component(step):
     world.create_component_instance(
         step, '.large-video-icon',
-        'i4x://edx/templates/video/default',
-        '.xmodule_VideoModule'
+        'video',
+        '.xmodule_VideoModule',
+        has_multiple_templates=False
     )
 
 
@@ -179,13 +241,32 @@ def shows_captions(step, show_captions):
     # Prevent cookies from overriding course settings
     world.browser.cookies.delete('hide_captions')
     if show_captions == 'does not':
-        assert world.css_find('.video')[0].has_class('closed')
+        assert world.css_has_class('.video', 'closed')
     else:
         assert world.is_css_not_present('.video.closed')
 
 
+@step('the save button is disabled$')
+def save_button_disabled(step):
+    button_css = '.action-save'
+    disabled = 'is-disabled'
+    assert world.css_has_class(button_css, disabled)
+
+
+@step('I confirm the prompt')
+def confirm_the_prompt(step):
+    prompt_css = 'a.button.action-primary'
+    world.css_click(prompt_css, success_condition=lambda: not world.css_visible(prompt_css))
+
+
+@step(u'I am shown a (.*)$')
+def i_am_shown_a_notification(step, notification_type):
+    assert world.is_css_present('.wrapper-%s' % notification_type)
+
+
 def type_in_codemirror(index, text):
     world.css_click(".CodeMirror", index=index)
+    world.browser.execute_script("$('div.CodeMirror.CodeMirror-focused > div').css('overflow', '')")
     g = world.css_find("div.CodeMirror.CodeMirror-focused > div > textarea")
     if world.is_mac():
         g._element.send_keys(Keys.COMMAND + 'a')

@@ -12,12 +12,11 @@ from xmodule.modulestore import Location
 from xmodule.modulestore.django import modulestore
 from xmodule.contentstore.content import StaticContent
 from xmodule.modulestore.xml import XMLModuleStore
-from xmodule.modulestore.exceptions import ItemNotFoundError
+from xmodule.modulestore.exceptions import ItemNotFoundError, InvalidLocationError
 from courseware.model_data import ModelDataCache
 from static_replace import replace_static_urls
 from courseware.access import has_access
 import branding
-from xmodule.modulestore.exceptions import ItemNotFoundError
 
 log = logging.getLogger(__name__)
 
@@ -49,7 +48,8 @@ def get_course_by_id(course_id, depth=0):
         return modulestore().get_instance(course_id, course_loc, depth=depth)
     except (KeyError, ItemNotFoundError):
         raise Http404("Course not found.")
-
+    except InvalidLocationError:
+        raise Http404("Invalid location")
 
 def get_course_with_access(user, course_id, action, depth=0):
     """
@@ -163,7 +163,7 @@ def get_course_about_section(course, section_key):
             html = ''
 
             if about_module is not None:
-                html = about_module.get_html()
+                html = about_module.runtime.render(about_module, None, 'student_view').content
 
             return html
 
@@ -211,7 +211,7 @@ def get_course_info_section(request, course, section_key):
     html = ''
 
     if info_module is not None:
-        html = info_module.get_html()
+        html = info_module.runtime.render(info_module, None, 'student_view').content
 
     return html
 

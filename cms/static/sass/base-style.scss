@@ -58,6 +58,7 @@
 @import 'views/unit';
 @import 'views/users';
 @import 'views/checklists';
+@import 'views/textbooks';
 
 // temp - inherited
 @import 'assets/content-types';
@@ -65,6 +66,7 @@
 // xmodule
 @import 'xmodule/modules/css/module-styles.scss';
 @import 'xmodule/descriptors/css/module-styles.scss';
+@import 'elements/xmodules'; // styling for Studio-specific contexts
 
 
 @import 'shame'; // shame file - used for any bad-form/orphaned scss that knowingly violate edX FED architecture/standards (see - http://csswizardry.com/2013/04/shame-css/)
