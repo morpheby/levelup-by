@@ -96,7 +96,7 @@ clone_repos() {
                 output "Creating backup for existing edx platform"
                 mv "$BASE/edx-platform" "${BASE}/edx-platform.bak.$$"
             fi
-            git clone https://github.com/morpheby/edx-platform.git
+            git clone https://github.com/morpheby/levelup-by.git
         fi
     fi
 }
@@ -279,6 +279,7 @@ case `uname -s` in
                 fi
                 sudo apt-get install -yq git
                 ;;
+
             Schrödinger’sCat)
                 if [[ ! $noninteractive ]]; then
                     warning "

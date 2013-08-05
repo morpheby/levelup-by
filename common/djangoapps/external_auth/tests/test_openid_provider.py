@@ -9,9 +9,14 @@ from urlparse import parse_qs
 
 from django.conf import settings
 from django.test import TestCase, LiveServerTestCase
-# from django.contrib.auth.models import User
+from django.core.cache import cache
+from django.test.utils import override_settings
 from django.core.urlresolvers import reverse
 from django.test.client import RequestFactory
+from unittest import skipUnless
+
+from student.tests.factories import UserFactory
+from external_auth.views import provider_login
 
 
 class MyFetcher(HTTPFetcher):
@@ -59,21 +64,17 @@ class MyFetcher(HTTPFetcher):
             final_url=final_url,
             headers=response_headers,
             status=status,
-            )
+        )
 
 
 class OpenIdProviderTest(TestCase):
+    """
+    Tests of the OpenId login
+    """
 
-#    def setUp(self):
-#        username = 'viewtest'
-#        email = 'view@test.com'
-#        password = 'foo'
-#        user = User.objects.create_user(username, email, password)
-
-    def testBeginLoginWithXrdsUrl(self):
-        # skip the test if openid is not enabled (as in cms.envs.test):
-        if not settings.MITX_FEATURES.get('AUTH_USE_OPENID') or not settings.MITX_FEATURES.get('AUTH_USE_OPENID_PROVIDER'):
-            return
+    @skipUnless(settings.MITX_FEATURES.get('AUTH_USE_OPENID') or
+                settings.MITX_FEATURES.get('AUTH_USE_OPENID_PROVIDER'), True)
+    def test_begin_login_with_xrds_url(self):
 
         # the provider URL must be converted to an absolute URL in order to be
         # used as an openid provider.
@@ -99,10 +100,9 @@ class OpenIdProviderTest(TestCase):
                              "got code {0} for url '{1}'. Expected code {2}"
                              .format(resp.status_code, url, code))
 
-    def testBeginLoginWithLoginUrl(self):
-        # skip the test if openid is not enabled (as in cms.envs.test):
-        if not settings.MITX_FEATURES.get('AUTH_USE_OPENID') or not settings.MITX_FEATURES.get('AUTH_USE_OPENID_PROVIDER'):
-            return
+    @skipUnless(settings.MITX_FEATURES.get('AUTH_USE_OPENID') or
+                settings.MITX_FEATURES.get('AUTH_USE_OPENID_PROVIDER'), True)
+    def test_begin_login_with_login_url(self):
 
         # the provider URL must be converted to an absolute URL in order to be
         # used as an openid provider.
@@ -150,49 +150,113 @@ class OpenIdProviderTest(TestCase):
             # <input name="openid.return_to" type="hidden" value="http://testserver/openid/complete/?janrain_nonce=2013-01-23T06%3A20%3A17ZaN7j6H" />
             # <input name="openid.assoc_handle" type="hidden" value="{HMAC-SHA1}{50ff8120}{rh87+Q==}" />
 
-
-    def testOpenIdSetup(self):
-        if not settings.MITX_FEATURES.get('AUTH_USE_OPENID_PROVIDER'):
-            return
+    def attempt_login(self, expected_code, **kwargs):
+        """ Attempt to log in through the open id provider login """
         url = reverse('openid-provider-login')
         post_args = {
-                     "openid.mode": "checkid_setup",
-                     "openid.return_to": "http://testserver/openid/complete/?janrain_nonce=2013-01-23T06%3A20%3A17ZaN7j6H",
-                     "openid.assoc_handle": "{HMAC-SHA1}{50ff8120}{rh87+Q==}",
-                     "openid.claimed_id": "http://specs.openid.net/auth/2.0/identifier_select",
-                     "openid.ns": "http://specs.openid.net/auth/2.0",
-                     "openid.realm": "http://testserver/",
-                     "openid.identity": "http://specs.openid.net/auth/2.0/identifier_select",
-                     "openid.ns.ax": "http://openid.net/srv/ax/1.0",
-                     "openid.ax.mode": "fetch_request",
-                     "openid.ax.required": "email,fullname,old_email,firstname,old_nickname,lastname,old_fullname,nickname",
-                     "openid.ax.type.fullname": "http://axschema.org/namePerson",
-                     "openid.ax.type.lastname": "http://axschema.org/namePerson/last",
-                     "openid.ax.type.firstname": "http://axschema.org/namePerson/first",
-                     "openid.ax.type.nickname": "http://axschema.org/namePerson/friendly",
-                     "openid.ax.type.email": "http://axschema.org/contact/email",
-                     "openid.ax.type.old_email": "http://schema.openid.net/contact/email",
-                     "openid.ax.type.old_nickname": "http://schema.openid.net/namePerson/friendly",
-                     "openid.ax.type.old_fullname": "http://schema.openid.net/namePerson",
-                     }
+            "openid.mode": "checkid_setup",
+            "openid.return_to": "http://testserver/openid/complete/?janrain_nonce=2013-01-23T06%3A20%3A17ZaN7j6H",
+            "openid.assoc_handle": "{HMAC-SHA1}{50ff8120}{rh87+Q==}",
+            "openid.claimed_id": "http://specs.openid.net/auth/2.0/identifier_select",
+            "openid.ns": "http://specs.openid.net/auth/2.0",
+            "openid.realm": "http://testserver/",
+            "openid.identity": "http://specs.openid.net/auth/2.0/identifier_select",
+            "openid.ns.ax": "http://openid.net/srv/ax/1.0",
+            "openid.ax.mode": "fetch_request",
+            "openid.ax.required": "email,fullname,old_email,firstname,old_nickname,lastname,old_fullname,nickname",
+            "openid.ax.type.fullname": "http://axschema.org/namePerson",
+            "openid.ax.type.lastname": "http://axschema.org/namePerson/last",
+            "openid.ax.type.firstname": "http://axschema.org/namePerson/first",
+            "openid.ax.type.nickname": "http://axschema.org/namePerson/friendly",
+            "openid.ax.type.email": "http://axschema.org/contact/email",
+            "openid.ax.type.old_email": "http://schema.openid.net/contact/email",
+            "openid.ax.type.old_nickname": "http://schema.openid.net/namePerson/friendly",
+            "openid.ax.type.old_fullname": "http://schema.openid.net/namePerson",
+        }
+        # override the default args with any given arguments
+        for key in kwargs:
+            post_args["openid." + key] = kwargs[key]
+
         resp = self.client.post(url, post_args)
-        code = 200
+        code = expected_code
         self.assertEqual(resp.status_code, code,
                          "got code {0} for url '{1}'. Expected code {2}"
                          .format(resp.status_code, url, code))
 
+    @skipUnless(settings.MITX_FEATURES.get('AUTH_USE_OPENID') or
+                settings.MITX_FEATURES.get('AUTH_USE_OPENID_PROVIDER'), True)
+    def test_open_id_setup(self):
+        """ Attempt a standard successful login """
+        self.attempt_login(200)
 
-# In order for this absolute URL to work (i.e. to get xrds, then authentication)
-# in the test environment, we either need a live server that works with the default
-# fetcher (i.e. urlopen2), or a test server that is reached through a custom fetcher.
-# Here we do the former.
+    @skipUnless(settings.MITX_FEATURES.get('AUTH_USE_OPENID') or
+                settings.MITX_FEATURES.get('AUTH_USE_OPENID_PROVIDER'), True)
+    def test_invalid_namespace(self):
+        """ Test for 403 error code when the namespace of the request is invalid"""
+        self.attempt_login(403, ns="http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0")
+
+    @override_settings(OPENID_PROVIDER_TRUSTED_ROOTS=['http://apps.cs50.edx.org'])
+    @skipUnless(settings.MITX_FEATURES.get('AUTH_USE_OPENID') or
+                settings.MITX_FEATURES.get('AUTH_USE_OPENID_PROVIDER'), True)
+    def test_invalid_return_url(self):
+        """ Test for 403 error code when the url"""
+        self.attempt_login(403, return_to="http://apps.cs50.edx.or")
+
+    def _send_bad_redirection_login(self):
+        """
+        Attempt to log in to the provider with setup parameters
+
+        Intentionally fail the login to force a redirect
+        """
+        user = UserFactory()
+
+        factory = RequestFactory()
+        post_params = {'email': user.email, 'password': 'password'}
+        fake_url = 'fake url'
+        request = factory.post(reverse('openid-provider-login'), post_params)
+        openid_setup = {
+            'request': factory.request(),
+            'url': fake_url
+        }
+        request.session = {
+            'openid_setup': openid_setup
+        }
+        response = provider_login(request)
+        return response
+
+    @skipUnless(settings.MITX_FEATURES.get('AUTH_USE_OPENID') or
+                settings.MITX_FEATURES.get('AUTH_USE_OPENID_PROVIDER'), True)
+    def test_login_openid_handle_redirection(self):
+        """ Test to see that we can handle login redirection properly"""
+        response = self._send_bad_redirection_login()
+        self.assertEquals(response.status_code, 302)
+
+    @skipUnless(settings.MITX_FEATURES.get('AUTH_USE_OPENID') or
+                settings.MITX_FEATURES.get('AUTH_USE_OPENID_PROVIDER'), True)
+    def test_login_openid_handle_redirection_ratelimited(self):
+        # try logging in 30 times, the default limit in the number of failed
+        # log in attempts before the rate gets limited
+        for _ in xrange(30):
+            self._send_bad_redirection_login()
+
+        response = self._send_bad_redirection_login()
+        # verify that we are not returning the default 403
+        self.assertEquals(response.status_code, 302)
+        # clear the ratelimit cache so that we don't fail other logins
+        cache.clear()
+
+
 class OpenIdProviderLiveServerTest(LiveServerTestCase):
+    """
+    In order for this absolute URL to work (i.e. to get xrds, then authentication)
+    in the test environment, we either need a live server that works with the default
+    fetcher (i.e. urlopen2), or a test server that is reached through a custom fetcher.
+    Here we do the former.
+    """
 
-    def testBeginLogin(self):
-        # skip the test if openid is not enabled (as in cms.envs.test):
-        if not settings.MITX_FEATURES.get('AUTH_USE_OPENID') or not settings.MITX_FEATURES.get('AUTH_USE_OPENID_PROVIDER'):
-            return
-
+    @skipUnless(settings.MITX_FEATURES.get('AUTH_USE_OPENID') or
+                settings.MITX_FEATURES.get('AUTH_USE_OPENID_PROVIDER'), True)
+    def test_begin_login(self):
         # the provider URL must be converted to an absolute URL in order to be
         # used as an openid provider.
         provider_url = reverse('openid-provider-xrds')

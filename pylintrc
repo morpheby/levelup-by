@@ -39,7 +39,13 @@ disable=
 # C0301: Line too long
 # W0141: Used builtin function 'map'
 # W0142: Used * or ** magic
-    I0011,C0301,W0141,W0142,
+# R0921: Abstract class not referenced
+# R0922: Abstract class is only referenced 1 times
+    I0011,C0301,W0141,W0142,R0921,R0922,
+
+# Django makes classes that trigger these
+# W0232: Class has no __init__ method
+    W0232,
 
 # Might use these when the code is in better shape
 # C0302: Too many lines in module
@@ -70,7 +76,7 @@ include-ids=yes
 files-output=no
 
 # Tells whether to display a full report or only the messages
-reports=yes
+reports=no
 
 # Python expression which should return a note less than 10 (10 is the highest
 # note). You have access to the variables errors warning, statement which
@@ -113,7 +119,7 @@ generated-members=
     size,
     content,
     status_code,
-# For factory_body factories
+# For factory_boy factories
     create
 
 
@@ -154,14 +160,14 @@ variable-rgx=[a-z_][a-z0-9_]{2,30}$
 inlinevar-rgx=[A-Za-z_][A-Za-z0-9_]*$
 
 # Good variable names which should always be accepted, separated by a comma
-good-names=i,j,k,ex,Run,_
+good-names=f,i,j,k,ex,Run,_,__
 
 # Bad variable names which should always be refused, separated by a comma
 bad-names=foo,bar,baz,toto,tutu,tata
 
 # Regular expression which should only match functions or classes name which do
 # not require a docstring
-no-docstring-rgx=(__.*__|test_.*)
+no-docstring-rgx=__.*__|test_.*|setUp|tearDown
 
 
 [MISCELLANEOUS]
@@ -202,7 +208,7 @@ init-import=no
 
 # A regular expression matching the beginning of the name of dummy variables
 # (i.e. not used).
-dummy-variables-rgx=_|dummy
+dummy-variables-rgx=_|dummy|unused|.*_unused
 
 # List of additional names supposed to be defined in builtins. Remember that
 # you should avoid to define new builtins when possible.

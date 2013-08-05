@@ -28,15 +28,27 @@ from xblock.core import Integer, Scope, String
 
 import datetime
 import time
+import textwrap
 
 log = logging.getLogger(__name__)
 
 
 class VideoAlphaFields(object):
     """Fields for `VideoAlphaModule` and `VideoAlphaDescriptor`."""
-    data = String(help="XML data for the problem", scope=Scope.content)
+    data = String(help="XML data for the problem",
+                  default=textwrap.dedent('''\
+                       <videoalpha show_captions="true" sub="name_of_file" youtube="0.75:JMD_ifUUfsU,1.0:OEoXaMPEzfM,1.25:AKqURZnYqpk,1.50:DYpADpL7jAY" >
+                           <source src="https://s3.amazonaws.com/edx-course-videos/edx-intro/edX-FA12-cware-1_100.mp4"/>
+                           <source src="https://s3.amazonaws.com/edx-course-videos/edx-intro/edX-FA12-cware-1_100.webm"/>
+                           <source src="https://s3.amazonaws.com/edx-course-videos/edx-intro/edX-FA12-cware-1_100.ogv"/>
+                       </videoalpha>'''),
+                  scope=Scope.content)
     position = Integer(help="Current position in the video", scope=Scope.user_state, default=0)
-    display_name = String(help="Display name for this module", scope=Scope.settings)
+    display_name = String(
+        display_name="Display Name", help="Display name for this module",
+        default="Video Alpha",
+        scope=Scope.settings
+    )
 
 
 class VideoAlphaModule(VideoAlphaFields, XModule):
@@ -56,22 +68,35 @@ class VideoAlphaModule(VideoAlphaFields, XModule):
     icon_class = 'video'
 
     js = {
-        'js': [resource_string(__name__, 'js/src/videoalpha/display/html5_video.js')],
-        'coffee':
-        [resource_string(__name__, 'js/src/time.coffee'),
-         resource_string(__name__, 'js/src/videoalpha/display.coffee')] +
-        [resource_string(__name__, 'js/src/videoalpha/display/' + filename)
-         for filename
-         in sorted(resource_listdir(__name__, 'js/src/videoalpha/display'))
-         if filename.endswith('.coffee')]}
+        'js': [
+            resource_string(__name__, 'js/src/videoalpha/01_initialize.js'),
+            resource_string(__name__, 'js/src/videoalpha/02_html5_video.js'),
+            resource_string(__name__, 'js/src/videoalpha/03_video_player.js'),
+            resource_string(__name__, 'js/src/videoalpha/04_video_control.js'),
+            resource_string(__name__, 'js/src/videoalpha/05_video_quality_control.js'),
+            resource_string(__name__, 'js/src/videoalpha/06_video_progress_slider.js'),
+            resource_string(__name__, 'js/src/videoalpha/07_video_volume_control.js'),
+            resource_string(__name__, 'js/src/videoalpha/08_video_speed_control.js'),
+            resource_string(__name__, 'js/src/videoalpha/09_video_caption.js'),
+            resource_string(__name__, 'js/src/videoalpha/10_main.js')
+        ]
+    }
     css = {'scss': [resource_string(__name__, 'css/videoalpha/display.scss')]}
     js_module_name = "VideoAlpha"
 
     def __init__(self, *args, **kwargs):
         XModule.__init__(self, *args, **kwargs)
         xmltree = etree.fromstring(self.data)
-        self.youtube_streams = xmltree.get('youtube')
+
+        # Front-end expects an empty string, or a properly formatted string with YouTube IDs.
+        self.youtube_streams = xmltree.get('youtube', '')
+
         self.sub = xmltree.get('sub')
+
+        self.autoplay = xmltree.get('autoplay') or ''
+        if self.autoplay.lower() not in ['true', 'false']:
+            self.autoplay = 'true'
+
         self.position = 0
         self.show_captions = xmltree.get('show_captions', 'true')
         self.sources = {
@@ -125,9 +150,9 @@ class VideoAlphaModule(VideoAlphaFields, XModule):
 
         return parse_time(xmltree.get('start_time')), parse_time(xmltree.get('end_time'))
 
-    def handle_ajax(self, dispatch, get):
+    def handle_ajax(self, dispatch, data):
         """This is not being called right now and we raise 404 error."""
-        log.debug(u"GET {0}".format(get))
+        log.debug(u"GET {0}".format(data))
         log.debug(u"DISPATCH {0}".format(dispatch))
         raise Http404()
 
@@ -147,6 +172,7 @@ class VideoAlphaModule(VideoAlphaFields, XModule):
             'youtube_streams': self.youtube_streams,
             'id': self.location.html_id(),
             'sub': self.sub,
+            'autoplay': self.autoplay,
             'sources': self.sources,
             'track': self.track,
             'display_name': self.display_name_with_default,
@@ -164,4 +190,3 @@ class VideoAlphaModule(VideoAlphaFields, XModule):
 class VideoAlphaDescriptor(VideoAlphaFields, RawDescriptor):
     """Descriptor for `VideoAlphaModule`."""
     module_class = VideoAlphaModule
-    template_dir_name = "videoalpha"
