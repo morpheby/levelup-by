@@ -42,7 +42,7 @@ class CMS.Views.UnitEdit extends Backbone.View
 
         payload = children : @components()
         saving = new CMS.Views.Notification.Mini
-          title: gettext('Saving') + '&hellip;'
+          title: gettext('Saving&hellip;')
         saving.show()
         options = success : =>
           @model.unset('children')
@@ -120,6 +120,7 @@ class CMS.Views.UnitEdit extends Backbone.View
     @model.save()
 
   deleteComponent: (event) =>
+    event.preventDefault()
     msg = new CMS.Views.Prompt.Warning(
       title: gettext('Delete this component?'),
       message: gettext('Deleting this component is permanent and cannot be undone.'),
@@ -129,7 +130,7 @@ class CMS.Views.UnitEdit extends Backbone.View
           click: (view) =>
             view.hide()
             deleting = new CMS.Views.Notification.Mini
-              title: gettext('Deleting') + '&hellip;',
+              title: gettext('Deleting&hellip;'),
             deleting.show()
             $component = $(event.currentTarget).parents('.component')
             $.post('/delete_item', {

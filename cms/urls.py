@@ -1,9 +1,9 @@
 from django.conf import settings
 from django.conf.urls import patterns, include, url
 
-# Import this file so it can do its work, even though we don't use the name.
-# pylint: disable=W0611
-from . import one_time_startup
+# TODO: This should be removed once the CMS is running via wsgi on all production servers
+import cms.startup as startup
+startup.run()
 
 # There is a course creators admin table.
 from ratelimitbackend import admin
@@ -76,8 +76,8 @@ urlpatterns = ('',  # nopep8
 
     url(r'^(?P<org>[^/]+)/(?P<course>[^/]+)/assets/(?P<name>[^/]+)$',
         'contentstore.views.asset_index', name='asset_index'),
-    url(r'^(?P<org>[^/]+)/(?P<course>[^/]+)/assets/(?P<name>[^/]+)/remove$',
-        'contentstore.views.assets.remove_asset', name='remove_asset'),
+    url(r'^(?P<org>[^/]+)/(?P<course>[^/]+)/assets/(?P<name>[^/]+)/(?P<asset_id>.+)?.*$',
+        'contentstore.views.assets.update_asset', name='update_asset'),
     url(r'^(?P<org>[^/]+)/(?P<course>[^/]+)/textbooks/(?P<name>[^/]+)$',
         'contentstore.views.textbook_index', name='textbook_index'),
     url(r'^(?P<org>[^/]+)/(?P<course>[^/]+)/textbooks/(?P<name>[^/]+)/new$',
@@ -135,10 +135,6 @@ urlpatterns += (
     url(r'^jsi18n/$', 'django.views.i18n.javascript_catalog', js_info_dict),
 )
 
-
-if settings.ENABLE_JASMINE:
-    urlpatterns += (url(r'^_jasmine/', include('django_jasmine.urls')),)
-
 if settings.MITX_FEATURES.get('ENABLE_SERVICE_STATUS'):
     urlpatterns += (
         url(r'^status/', include('service_status.urls')),
@@ -147,7 +143,7 @@ if settings.MITX_FEATURES.get('ENABLE_SERVICE_STATUS'):
 urlpatterns += (url(r'^admin/', include(admin.site.urls)),)
 
 # enable automatic login
-if settings.MITX_FEATURES.get('AUTOMATIC_AUTH_FOR_LOAD_TESTING'):
+if settings.MITX_FEATURES.get('AUTOMATIC_AUTH_FOR_TESTING'):
     urlpatterns += (
         url(r'^auto_auth$', 'student.views.auto_auth'),
     )

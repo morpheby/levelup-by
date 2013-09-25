@@ -13,8 +13,8 @@ CMS.Views.Settings.Details = CMS.Views.ValidatingView.extend({
         'mouseover #timezone' : "updateTime",
         // would love to move to a general superclass, but event hashes don't inherit in backbone :-(
         'focus :input' : "inputFocus",
-        'blur :input' : "inputUnfocus"
-
+        'blur :input' : "inputUnfocus",
+        'click .action-upload-image': "uploadImage"
     },
 
     initialize : function() {
@@ -24,6 +24,14 @@ CMS.Views.Settings.Details = CMS.Views.ValidatingView.extend({
         this.$el.find("#course-organization").val(this.model.get('location').get('org'));
         this.$el.find("#course-number").val(this.model.get('location').get('course'));
         this.$el.find('.set-date').datepicker({ 'dateFormat': 'm/d/yy' });
+
+        // Avoid showing broken image on mistyped/nonexistent image
+        this.$el.find('img.course-image').error(function() {
+            $(this).hide();
+        });
+        this.$el.find('img.course-image').load(function() {
+            $(this).show();
+        });
 
         var dateIntrospect = new Date();
         this.$el.find('#timezone').html("(" + dateIntrospect.getTimezone() + ")");
@@ -51,6 +59,10 @@ CMS.Views.Settings.Details = CMS.Views.ValidatingView.extend({
 
         this.$el.find('#' + this.fieldToSelectorMap['effort']).val(this.model.get('effort'));
 
+        var imageURL = this.model.get('course_image_asset_path');
+        this.$el.find('#course-image-url').val(imageURL);
+        this.$el.find('#course-image').attr('src', imageURL);
+
         return this;
     },
     fieldToSelectorMap : {
@@ -60,7 +72,8 @@ CMS.Views.Settings.Details = CMS.Views.ValidatingView.extend({
         'enrollment_end' : 'enrollment-end',
         'overview' : 'course-overview',
         'intro_video' : 'course-introduction-video',
-        'effort' : "course-effort"
+        'effort' : "course-effort",
+        'course_image_asset_path': 'course-image-url'
     },
 
     updateTime : function(e) {
@@ -121,6 +134,17 @@ CMS.Views.Settings.Details = CMS.Views.ValidatingView.extend({
 
     updateModel: function(event) {
         switch (event.currentTarget.id) {
+        case 'course-image-url':
+            this.setField(event);
+            var url = $(event.currentTarget).val();
+            var image_name = _.last(url.split('/'));
+            this.model.set('course_image_name', image_name);
+            // Wait to set the image src until the user stops typing
+            clearTimeout(this.imageTimer);
+            this.imageTimer = setTimeout(function() {
+                $('#course-image').attr('src', $(event.currentTarget).val());
+            }, 1000);
+            break;
         case 'course-effort':
             this.setField(event);
             break;
@@ -160,8 +184,16 @@ CMS.Views.Settings.Details = CMS.Views.ValidatingView.extend({
         if (forcedTarget) {
             thisTarget = forcedTarget;
             thisTarget.id = $(thisTarget).attr('id');
-        } else {
+        } else if (e !== null) {
             thisTarget = e.currentTarget;
+        } else
+        {
+            // e and forcedTarget can be null so don't deference it
+            // This is because in cases where we have a marketing site
+            // we don't display the codeMirrors for editing the marketing
+            // materials, except we do need to show the 'set course image'
+            // workflow. So in this case e = forcedTarget = null.
+            return;
         }
 
         if (!this.codeMirrors[thisTarget.id]) {
@@ -216,6 +248,29 @@ CMS.Views.Settings.Details = CMS.Views.ValidatingView.extend({
                                                                     this.save_message,
                                                                     _.bind(this.saveView, this),
                                                                     _.bind(this.revertView, this));
+    },
+
+    uploadImage: function(event) {
+        event.preventDefault();
+        var upload = new CMS.Models.FileUpload({
+            title: gettext("Upload your course image."),
+            message: gettext("Files must be in JPEG or PNG format."),
+            mimeTypes: ['image/jpeg', 'image/png']
+        });
+        var self = this;
+        var modal = new CMS.Views.UploadDialog({
+            model: upload,
+            onSuccess: function(response) {
+                var options = {
+                    'course_image_name': response.asset.display_name,
+                    'course_image_asset_path': response.asset.url
+                };
+                self.model.set(options);
+                self.render();
+                $('#course-image').attr('src', self.model.get('course_image_asset_path'))
+            }
+        });
+        $('.wrapper-view').after(modal.show().el);
     }
 });
 

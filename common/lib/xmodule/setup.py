@@ -40,7 +40,7 @@ setup(
             "timelimit = xmodule.timelimit_module:TimeLimitDescriptor",
             "vertical = xmodule.vertical_module:VerticalDescriptor",
             "video = xmodule.video_module:VideoDescriptor",
-            "videoalpha = xmodule.videoalpha_module:VideoAlphaDescriptor",
+            "videoalpha = xmodule.video_module:VideoDescriptor",
             "videodev = xmodule.backcompat_module:TranslateCustomTagDescriptor",
             "videosequence = xmodule.seq_module:SequenceDescriptor",
             "discussion = xmodule.discussion_module:DiscussionDescriptor",
@@ -56,6 +56,7 @@ setup(
             "hidden = xmodule.hidden_module:HiddenDescriptor",
             "raw = xmodule.raw_module:RawDescriptor",
             "crowdsource_hinter = xmodule.crowdsource_hinter:CrowdsourceHinterDescriptor",
+            "lti = xmodule.lti_module:LTIModuleDescriptor"
         ],
         'console_scripts': [
             'xmodule_assets = xmodule.static_content:main',

@@ -5,6 +5,71 @@ These are notable changes in edx-platform.  This is a rolling list of changes,
 in roughly chronological order, most recent first.  Add your entries at or near
 the top.  Include a label indicating the component affected.
 
+LMS: Improved accessibility of parts of forum navigation sidebar.
+
+LMS: enhanced accessibility labeling and aria support for the discussion forum new post dropdown as well as response and comment area labeling.
+
+LMS: enhanced shib support, including detection of linked shib account
+at login page and support for the ?next= GET parameter.
+
+LMS: Experimental feature using the ICE change tracker JS pkg to allow peer 
+assessors to edit the original submitter's work.
+
+LMS: Fixed a bug that caused links from forum user profile pages to
+threads to lead to 404s if the course id contained a '-' character.
+
+Studio/LMS: Added ability to set due date formatting through Studio's Advanced Settings.
+The key is due_date_display_format, and the value should be a format supported by Python's
+strftime function.
+
+Common: Added configurable backends for tracking events. Tracking events using
+the python logging module is the default backend. Support for MongoDB and a
+Django database is also available.
+
+Blades: Added Learning Tools Interoperability (LTI) blade. Now LTI components
+can be included to courses.
+
+LMS: Added alphabetical sorting of forum categories and subcategories.
+It is hidden behind a false defaulted course level flag.
+
+Studio: Allow course authors to set their course image on the schedule
+and details page, with support for JPEG and PNG images.
+
+LMS, Studio: Centralized startup code to manage.py and wsgi.py files.
+Made studio runnable using wsgi.
+
+Blades: Took videoalpha out of alpha, replacing the old video player
+
+Common: Allow instructors to input complicated expressions as answers to
+`NumericalResponse`s. Prior to the change only numbers were allowed, now any
+answer from '1/3' to 'sqrt(12)*(1-1/3^2+1/5/3^2)' are valid.
+
+LMS: Enable beta instructor dashboard. The beta dashboard is a rearchitecture
+of the existing instructor dashboard and is available by clicking a link at
+the top right of the existing dashboard.
+
+Common: CourseEnrollment has new fields `is_active` and `mode`. The mode will be
+used to differentiate different kinds of enrollments (currently, all enrollments
+are honor certificate enrollments). The `is_active` flag will be used to
+deactivate enrollments without deleting them, so that we know what course you
+*were* enrolled in. Because of the latter change, enrollment and unenrollment
+logic has been consolidated into the model -- you should use new class methods
+to `enroll()`, `unenroll()`, and to check `is_enrolled()`, instead of creating
+CourseEnrollment objects or querying them directly.
+
+LMS: Added bulk email for course feature, with option to optout of individual
+course emails.
+
+Studio: Email will be sent to admin address when a user requests course creator
+privileges for Studio (edge only).
+
+Studio: Studio course authors (both instructors and staff) will be auto-enrolled
+for their courses so that "View Live" works.
+
+Common: Add a new input type ``<formulaequationinput />`` for Formula/Numerical
+Responses. It periodically makes AJAX calls to preview and validate the
+student's input.
+
 Common: Added ratelimiting to our authentication backend.
 
 Common: Add additional logging to cover login attempts and logouts.
@@ -42,6 +107,9 @@ Common: Add a manage.py that knows about edx-platform specific settings and proj
 
 Common: Added *experimental* support for jsinput type.
 
+Studio: Remove XML from HTML5 video component editor. All settings are
+moved to be edited as metadata.
+
 Common: Added setting to specify Celery Broker vhost
 
 Common: Utilize new XBlock bulk save API in LMS and CMS.
@@ -67,6 +135,8 @@ Blades: User answer now preserved (and changeable) after clicking "show answer" 
 LMS: Removed press releases
 
 Common: Updated Sass and Bourbon libraries, added Neat library
+
+LMS: Add a MixedModuleStore to aggregate the XMLModuleStore and MongoMonduleStore
 
 LMS: Users are no longer auto-activated if they click "reset password"
 This is now done when they click on the link in the reset password
@@ -205,6 +275,12 @@ LMS: Fixed failing numeric response (decimal but no trailing digits).
 
 LMS: XML Error module no longer shows students a stack trace.
 
+Studio: Add feedback to end user if there is a problem exporting a course
+
+Studio: Improve link re-writing on imports into a different course-id
+
+Studio: Allow for intracourse linking in Capa Problems
+
 Blades: Videoalpha.
 
 XModules: Added partial credit for foldit module.
@@ -212,6 +288,10 @@ XModules: Added partial credit for foldit module.
 XModules: Added "randomize" XModule to list of XModule types.
 
 XModules: Show errors with full descriptors.
+
+Studio: Add feedback to end user if there is a problem exporting a course
+
+Studio: Improve link re-writing on imports into a different course-id
 
 XQueue: Fixed (hopefully) worker crash when the connection to RabbitMQ is
 dropped suddenly.
@@ -227,4 +307,3 @@ Common: Updated CodeJail.
 Common: Allow setting of authentication session cookie name.
 
 LMS: Option to email students when enroll/un-enroll them.
-

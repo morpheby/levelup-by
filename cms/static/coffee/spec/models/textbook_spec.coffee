@@ -25,7 +25,7 @@ describe "CMS.Models.Textbook", ->
             expect(@model.isEmpty()).toBeTruthy()
 
         it "should have a URL set", ->
-            expect(_.result(@model, "url")).toBeTruthy()
+            expect(@model.url()).toBeTruthy()
 
         it "should be able to reset itself", ->
             @model.set("name", "foobar")
@@ -124,14 +124,14 @@ describe "CMS.Models.Textbook", ->
 
 describe "CMS.Collections.TextbookSet", ->
     beforeEach ->
-        CMS.URL.TEXTBOOK = "/textbooks"
+        CMS.URL.TEXTBOOKS = "/textbooks"
         @collection = new CMS.Collections.TextbookSet()
 
     afterEach ->
-        delete CMS.URL.TEXTBOOK
+        delete CMS.URL.TEXTBOOKS
 
     it "should have a url set", ->
-        expect(_.result(@collection, "url"), "/textbooks")
+        expect(@collection.url()).toEqual("/textbooks")
 
     it "can call save", ->
         spyOn(@collection, "sync")
@@ -196,32 +196,3 @@ describe "CMS.Collections.ChapterSet", ->
         # try going back one
         @collection.remove(@collection.last())
         expect(@collection.nextOrder()).toEqual(2)
-
-
-describe "CMS.Models.FileUpload", ->
-    beforeEach ->
-        @model = new CMS.Models.FileUpload()
-
-    it "is unfinished by default", ->
-        expect(@model.get("finished")).toBeFalsy()
-
-    it "is not uploading by default", ->
-        expect(@model.get("uploading")).toBeFalsy()
-
-    it "is valid by default", ->
-        expect(@model.isValid()).toBeTruthy()
-
-    it "is valid for PDF files", ->
-        file = {"type": "application/pdf"}
-        @model.set("selectedFile", file);
-        expect(@model.isValid()).toBeTruthy()
-
-    it "is invalid for text files", ->
-        file = {"type": "text/plain"}
-        @model.set("selectedFile", file);
-        expect(@model.isValid()).toBeFalsy()
-
-    it "is invalid for PNG files", ->
-        file = {"type": "image/png"}
-        @model.set("selectedFile", file);
-        expect(@model.isValid()).toBeFalsy()

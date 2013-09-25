@@ -18,9 +18,10 @@ from .progress import Progress
 from xmodule.x_module import XModule
 from xmodule.raw_module import RawDescriptor
 from xmodule.exceptions import NotFoundError, ProcessingError
-from xblock.core import Scope, String, Boolean, Dict, Integer, Float
+from xblock.fields import Scope, String, Boolean, Dict, Integer, Float
 from .fields import Timedelta, Date
 from django.utils.timezone import UTC
+from django.utils.translation import ugettext as _
 
 log = logging.getLogger("mitx.courseware")
 
@@ -348,7 +349,7 @@ class CapaModule(CapaFields, XModule):
         else:
             final_check = False
 
-        return "Final Check" if final_check else "Check"
+        return _("Final Check") if final_check else _("Check")
 
     def should_show_check_button(self):
         """
@@ -534,8 +535,16 @@ class CapaModule(CapaFields, XModule):
                 id=self.location.html_id(), ajax_url=self.system.ajax_url
             ) + html + "</div>"
 
-        # now do the substitutions which are filesystem based, e.g. '/static/' prefixes
-        return self.system.replace_urls(html)
+        # now do all the substitutions which the LMS module_render normally does, but
+        # we need to do here explicitly since we can get called for our HTML via AJAX
+        html = self.system.replace_urls(html)
+        if self.system.replace_course_urls:
+            html = self.system.replace_course_urls(html)
+
+        if self.system.replace_jump_to_id_urls:
+            html = self.system.replace_jump_to_id_urls(html)
+
+        return html
 
     def handle_ajax(self, dispatch, data):
         """
