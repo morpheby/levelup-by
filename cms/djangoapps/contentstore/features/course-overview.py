@@ -3,7 +3,7 @@
 
 from lettuce import world, step
 from common import *
-from nose.tools import assert_true, assert_false, assert_equal
+from nose.tools import assert_true, assert_false, assert_equal  # pylint: disable=E0611
 
 from logging import getLogger
 logger = getLogger(__name__)
@@ -52,7 +52,7 @@ def have_a_course_with_two_sections(step):
 def navigate_to_the_course_overview_page(step):
     create_studio_user(is_staff=True)
     log_into_studio()
-    course_locator = '.class-name'
+    course_locator = 'a.course-link'
     world.css_click(course_locator)
 
 

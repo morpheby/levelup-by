@@ -11,7 +11,7 @@ from .peer_grading_service import PeerGradingService, MockPeerGradingService
 import controller_query_service
 
 from datetime import datetime
-from django.utils.timezone import UTC
+from pytz import UTC
 
 log = logging.getLogger("mitx.courseware")
 
@@ -58,7 +58,7 @@ class OpenEndedChild(object):
         'assessing': 'In progress',
         'post_assessment': 'Done',
         'done': 'Done',
-    }
+        }
 
     def __init__(self, system, location, definition, descriptor, static_data,
                  instance_state=None, shared_state=None, **kwargs):
@@ -82,6 +82,7 @@ class OpenEndedChild(object):
         self.child_state = instance_state.get('child_state', self.INITIAL)
         self.child_created = instance_state.get('child_created', False)
         self.child_attempts = instance_state.get('child_attempts', 0)
+        self.stored_answer = instance_state.get('stored_answer', None)
 
         self.max_attempts = static_data['max_attempts']
         self.child_prompt = static_data['prompt']
@@ -92,6 +93,7 @@ class OpenEndedChild(object):
         self.s3_interface = static_data['s3_interface']
         self.skip_basic_checks = static_data['skip_basic_checks']
         self._max_score = static_data['max_score']
+        self.control = static_data['control']
 
         # Used for progress / grading.  Currently get credit just for
         # completion (doesn't matter if you self-assessed correct/incorrect).
@@ -126,7 +128,7 @@ class OpenEndedChild(object):
         pass
 
     def closed(self):
-        if self.close_date is not None and datetime.now(UTC()) > self.close_date:
+        if self.close_date is not None and datetime.now(UTC) > self.close_date:
             return True
         return False
 
@@ -178,10 +180,11 @@ class OpenEndedChild(object):
             answer = autolink_html(answer)
             cleaner = Cleaner(style=True, links=True, add_nofollow=False, page_structure=True, safe_attrs_only=True,
                               host_whitelist=open_ended_image_submission.TRUSTED_IMAGE_DOMAINS,
-                              whitelist_tags=set(['embed', 'iframe', 'a', 'img']))
+                              whitelist_tags=set(['embed', 'iframe', 'a', 'img', 'br']))
             clean_html = cleaner.clean_html(answer)
             clean_html = re.sub(r'</p>$', '', re.sub(r'^<p>', '', clean_html))
-        except:
+            clean_html = re.sub("\n","<br/>", clean_html)
+        except Exception:
             clean_html = answer
         return clean_html
 
@@ -193,6 +196,7 @@ class OpenEndedChild(object):
         """
         answer = OpenEndedChild.sanitize_html(answer)
         self.child_history.append({'answer': answer})
+        self.stored_answer = None
 
     def record_latest_score(self, score):
         """Assumes that state is right, so we're adding a score to the latest
@@ -229,7 +233,8 @@ class OpenEndedChild(object):
             'max_score': self._max_score,
             'child_attempts': self.child_attempts,
             'child_created': False,
-        }
+            'stored_answer': self.stored_answer,
+            }
         return json.dumps(state)
 
     def _allow_reset(self):
@@ -258,6 +263,33 @@ class OpenEndedChild(object):
         (error only present if not success)
         """
         self.change_state(self.INITIAL)
+        return {'success': True}
+
+    def get_display_answer(self):
+        latest = self.latest_answer()
+        if self.child_state == self.INITIAL:
+            if self.stored_answer is not None:
+                previous_answer = self.stored_answer
+            elif latest is not None and len(latest) > 0:
+                previous_answer = latest
+            else:
+                previous_answer = ""
+            previous_answer = previous_answer.replace("<br/>","\n").replace("<br>", "\n")
+        else:
+            if latest is not None and len(latest) > 0:
+                previous_answer = latest
+            else:
+                previous_answer = ""
+            previous_answer = previous_answer.replace("\n","<br/>")
+
+        return previous_answer
+
+    def store_answer(self, data, system):
+        if self.child_state != self.INITIAL:
+            # We can only store an answer if the problem has not moved into the assessment phase.
+            return self.out_of_sync_error(data)
+
+        self.stored_answer = data['student_answer']
         return {'success': True}
 
     def get_progress(self):
@@ -331,7 +363,7 @@ class OpenEndedChild(object):
         try:
             image_data.seek(0)
             image_ok = open_ended_image_submission.run_image_tests(image_data)
-        except:
+        except Exception:
             log.exception("Could not create image and check it.")
 
         if image_ok:
@@ -344,7 +376,7 @@ class OpenEndedChild(object):
                 success, s3_public_url = open_ended_image_submission.upload_to_s3(
                     image_data, image_key, self.s3_interface
                 )
-            except:
+            except Exception:
                 log.exception("Could not upload image to S3.")
 
         return success, image_ok, s3_public_url
@@ -432,38 +464,6 @@ class OpenEndedChild(object):
                     success = True
 
         return success, string
-
-    def check_if_student_can_submit(self):
-        location = self.location_string
-
-        student_id = self.system.anonymous_student_id
-        success = False
-        allowed_to_submit = True
-        response = {}
-        # This is a student_facing_error
-        error_string = ("You need to peer grade {0} more in order to make another submission.  "
-                        "You have graded {1}, and {2} are required.  You have made {3} successful peer grading submissions.")
-        try:
-            response = self.peer_gs.get_data_for_location(self.location_string, student_id)
-            count_graded = response['count_graded']
-            count_required = response['count_required']
-            student_sub_count = response['student_sub_count']
-            success = True
-        except:
-            # This is a dev_facing_error
-            log.error("Could not contact external open ended graders for location {0} and student {1}".format(
-                self.location_string, student_id))
-            # This is a student_facing_error
-            error_message = "Could not contact the graders.  Please notify course staff."
-            return success, allowed_to_submit, error_message
-        if count_graded >= count_required:
-            return success, allowed_to_submit, ""
-        else:
-            allowed_to_submit = False
-            # This is a student_facing_error
-            error_message = error_string.format(count_required - count_graded, count_graded, count_required,
-                                                student_sub_count)
-            return success, allowed_to_submit, error_message
 
     def get_eta(self):
         if self.controller_qs:

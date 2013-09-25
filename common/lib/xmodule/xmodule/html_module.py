@@ -7,13 +7,14 @@ from lxml import etree
 from path import path
 
 from pkg_resources import resource_string
-from xblock.core import Scope, String
+from xblock.fields import Scope, String
 from xmodule.editing_module import EditingDescriptor
 from xmodule.html_checker import check_html
 from xmodule.stringify import stringify_children
 from xmodule.x_module import XModule
 from xmodule.xml_module import XmlDescriptor, name_to_pathname
 import textwrap
+from xmodule.contentstore.content import StaticContent
 
 log = logging.getLogger("mitx.courseware")
 
@@ -32,11 +33,13 @@ class HtmlFields(object):
 
 
 class HtmlModule(HtmlFields, XModule):
-    js = {'coffee': [resource_string(__name__, 'js/src/javascript_loader.coffee'),
-                     resource_string(__name__, 'js/src/collapsible.coffee'),
-                     resource_string(__name__, 'js/src/html/display.coffee')
-                    ]
-         }
+    js = {
+        'coffee': [
+            resource_string(__name__, 'js/src/javascript_loader.coffee'),
+            resource_string(__name__, 'js/src/collapsible.coffee'),
+            resource_string(__name__, 'js/src/html/display.coffee')
+        ]
+    }
     js_module_name = "HTMLModule"
     css = {'scss': [resource_string(__name__, 'css/html/display.scss')]}
 
@@ -79,6 +82,17 @@ class HtmlDescriptor(HtmlFields, XmlDescriptor, EditingDescriptor):
                 nc.append(candidate[:-4] + '.html')
         return candidates + nc
 
+    def get_context(self):
+        """
+        an override to add in specific rendering context, in this case we need to
+        add in a base path to our c4x content addressing scheme
+        """
+        _context = EditingDescriptor.get_context(self)
+        # Add some specific HTML rendering context when editing HTML modules where we pass
+        # the root /c4x/ url for assets. This allows client-side substitutions to occur.
+        _context.update({'base_asset_url': StaticContent.get_base_url_path_for_course_assets(self.location) + '/'})
+        return _context
+
     # NOTE: html descriptors are special.  We do not want to parse and
     # export them ourselves, because that can break things (e.g. lxml
     # adds body tags when it exports, but they should just be html
@@ -106,8 +120,10 @@ class HtmlDescriptor(HtmlFields, XmlDescriptor, EditingDescriptor):
             # from .html
             # 'filename' in html pointers is a relative path
             # (not same as 'html/blah.html' when the pointer is in a directory itself)
-            pointer_path = "{category}/{url_path}".format(category='html',
-                                                  url_path=name_to_pathname(location.name))
+            pointer_path = "{category}/{url_path}".format(
+                category='html',
+                url_path=name_to_pathname(location.name)
+            )
             base = path(pointer_path).dirname()
             # log.debug("base = {0}, base.dirname={1}, filename={2}".format(base, base.dirname(), filename))
             filepath = "{base}/{name}.html".format(base=base, name=filename)
@@ -152,19 +168,16 @@ class HtmlDescriptor(HtmlFields, XmlDescriptor, EditingDescriptor):
     # TODO (vshnayder): make export put things in the right places.
 
     def definition_to_xml(self, resource_fs):
-        '''If the contents are valid xml, write them to filename.xml.  Otherwise,
-        write just <html filename="" [meta-attrs="..."]> to filename.xml, and the html
+        ''' Write <html filename="" [meta-attrs="..."]> to filename.xml, and the html
         string to filename.html.
         '''
-        try:
-            return etree.fromstring(self.data)
-        except etree.XMLSyntaxError:
-            pass
 
-        # Not proper format.  Write html to file, return an empty tag
+        # Write html to file, return an empty tag
         pathname = name_to_pathname(self.url_name)
-        filepath = u'{category}/{pathname}.html'.format(category=self.category,
-                                                    pathname=pathname)
+        filepath = u'{category}/{pathname}.html'.format(
+            category=self.category,
+            pathname=pathname
+        )
 
         resource_fs.makedir(os.path.dirname(filepath), recursive=True, allow_recreate=True)
         with resource_fs.open(filepath, 'w') as filestream:
@@ -178,6 +191,7 @@ class HtmlDescriptor(HtmlFields, XmlDescriptor, EditingDescriptor):
         elt.set("filename", relname)
         return elt
 
+
 class AboutFields(object):
     display_name = String(
         help="Display name for this module",
@@ -190,11 +204,13 @@ class AboutFields(object):
         scope=Scope.content
     )
 
+
 class AboutModule(AboutFields, HtmlModule):
     """
     Overriding defaults but otherwise treated as HtmlModule.
     """
     pass
+
 
 class AboutDescriptor(AboutFields, HtmlDescriptor):
     """
@@ -203,6 +219,7 @@ class AboutDescriptor(AboutFields, HtmlDescriptor):
     """
     template_dir_name = "about"
     module_class = AboutModule
+
 
 class StaticTabFields(object):
     """
@@ -228,6 +245,7 @@ class StaticTabModule(StaticTabFields, HtmlModule):
     Supports the field overrides
     """
     pass
+
 
 class StaticTabDescriptor(StaticTabFields, HtmlDescriptor):
     """
