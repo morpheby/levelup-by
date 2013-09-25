@@ -402,14 +402,14 @@ export WORKON_HOME=$PYTHON_DIR
 if [[ `type -t mkvirtualenv` != "function" ]]; then
     case `uname -s` in
         Darwin)
-            source `which virtualenvwrapper.sh`
+            VEWRAPPER=`which virtualenvwrapper.sh`
         ;;
 
         [Ll]inux)
         if [[ -f "/etc/bash_completion.d/virtualenvwrapper" ]]; then
-            source /etc/bash_completion.d/virtualenvwrapper
+            VEWRAPPER=/etc/bash_completion.d/virtualenvwrapper
         elif [[ -f `which virtualenvwrapper.sh` ]]; then
-            source `which virtualenvwrapper.sh`
+            VEWRAPPER=`which virtualenvwrapper.sh`
         else
             error "Could not find virtualenvwrapper"
             exit 1
@@ -418,6 +418,7 @@ if [[ `type -t mkvirtualenv` != "function" ]]; then
     esac
 fi
 
+source $VEWRAPPER
 # Create edX virtualenv and link it to repo
 # virtualenvwrapper automatically sources the activation script
 if [[ $systempkgs ]]; then
@@ -531,11 +532,11 @@ if [[ ! $quiet ]]; then
    environment. Ensure the following lines are added to your
    login script, and source your login script if needed:
 
-        source `which virtualenvwrapper.sh`
+        source $VEWRAPPER
 
    Then, every time you're ready to work on the project, just run
 
-        $ workon mitx
+        $ workon edx-platform
 
    To start the Django on port 8000
 

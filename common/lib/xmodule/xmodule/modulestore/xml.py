@@ -20,8 +20,11 @@ from xmodule.mako_module import MakoDescriptorSystem
 from xmodule.x_module import XModuleDescriptor, XMLParsingSystem
 
 from xmodule.html_module import HtmlDescriptor
+from xblock.fields import ScopeIds
+from xblock.field_data import DictFieldData
 
-from . import ModuleStoreBase, Location
+from . import ModuleStoreBase, Location, XML_MODULESTORE_TYPE
+
 from .exceptions import ItemNotFoundError
 from .inheritance import compute_inherited_metadata
 
@@ -44,7 +47,7 @@ def clean_out_mako_templating(xml_string):
 
 class ImportSystem(XMLParsingSystem, MakoDescriptorSystem):
     def __init__(self, xmlstore, course_id, course_dir,
-                 policy, error_tracker, parent_tracker,
+                 error_tracker, parent_tracker,
                  load_error_modules=True, **kwargs):
         """
         A class that handles loading from xml.  Does some munging to ensure that
@@ -170,7 +173,7 @@ class ImportSystem(XMLParsingSystem, MakoDescriptorSystem):
                 # Didn't load properly.  Fall back on loading as an error
                 # descriptor.  This should never error due to formatting.
 
-                msg = "Error loading from xml. " + str(err)[:200]
+                msg = "Error loading from xml. " + unicode(err)[:200]
                 log.warning(msg)
                 # Normally, we don't want lots of exception traces in our logs from common
                 # content problems.  But if you're debugging the xml loading code itself,
@@ -187,7 +190,7 @@ class ImportSystem(XMLParsingSystem, MakoDescriptorSystem):
                     err_msg
                 )
 
-            setattr(descriptor, 'data_dir', course_dir)
+            descriptor.data_dir = course_dir
 
             xmlstore.modules[course_id][descriptor.location] = descriptor
 
@@ -206,11 +209,14 @@ class ImportSystem(XMLParsingSystem, MakoDescriptorSystem):
         # policy to be loaded.  For now, just add the course_id here...
         load_item = lambda location: xmlstore.get_instance(course_id, location)
         resources_fs = OSFS(xmlstore.data_dir / course_dir)
-
-        MakoDescriptorSystem.__init__(self, load_item, resources_fs,
-                                      error_tracker, render_template, **kwargs)
-        XMLParsingSystem.__init__(self, load_item, resources_fs,
-                                  error_tracker, process_xml, policy, **kwargs)
+        super(ImportSystem, self).__init__(
+            load_item=load_item,
+            resources_fs=resources_fs,
+            render_template=render_template,
+            error_tracker=error_tracker,
+            process_xml=process_xml,
+            **kwargs
+        )
 
 
 class ParentTracker(object):
@@ -257,7 +263,7 @@ class XMLModuleStore(ModuleStoreBase):
     """
     An XML backed ModuleStore
     """
-    def __init__(self, data_dir, default_class=None, course_dirs=None, load_error_modules=True):
+    def __init__(self, data_dir, default_class=None, course_dirs=None, load_error_modules=True, **kwargs):
         """
         Initialize an XMLModuleStore from data_dir
 
@@ -269,7 +275,7 @@ class XMLModuleStore(ModuleStoreBase):
         course_dirs: If specified, the list of course_dirs to load. Otherwise,
             load all course dirs
         """
-        super(XMLModuleStore, self).__init__()
+        super(XMLModuleStore, self).__init__(**kwargs)
 
         self.data_dir = path(data_dir)
         self.modules = defaultdict(dict)  # course_id -> dict(location -> XModuleDescriptor)
@@ -311,7 +317,8 @@ class XMLModuleStore(ModuleStoreBase):
         try:
             course_descriptor = self.load_course(course_dir, errorlog.tracker)
         except Exception as e:
-            msg = "ERROR: Failed to load course '{0}': {1}".format(course_dir, str(e))
+            msg = "ERROR: Failed to load course '{0}': {1}".format(course_dir.encode("utf-8"),
+                    unicode(e))
             log.exception(msg)
             errorlog.tracker(msg)
 
@@ -412,13 +419,14 @@ class XMLModuleStore(ModuleStoreBase):
 
             course_id = CourseDescriptor.make_id(org, course, url_name)
             system = ImportSystem(
-                self,
-                course_id,
-                course_dir,
-                policy,
-                tracker,
-                self.parent_trackers[course_id],
-                self.load_error_modules,
+                xmlstore=self,
+                course_id=course_id,
+                course_dir=course_dir,
+                error_tracker=tracker,
+                parent_tracker=self.parent_trackers[course_id],
+                load_error_modules=self.load_error_modules,
+                policy=policy,
+                mixins=self.xblock_mixins,
             )
 
             course_descriptor = system.process_xml(etree.tostring(course_data, encoding='unicode'))
@@ -467,9 +475,13 @@ class XMLModuleStore(ModuleStoreBase):
                     # tabs are referenced in policy.json through a 'slug' which is just the filename without the .html suffix
                     slug = os.path.splitext(os.path.basename(filepath))[0]
                     loc = Location('i4x', course_descriptor.location.org, course_descriptor.location.course, category, slug)
-                    module = HtmlDescriptor(
-                        system,
-                        {'data': html, 'location': loc, 'category': category}
+                    module = system.construct_xblock_from_class(
+                        HtmlDescriptor,
+                        DictFieldData({'data': html, 'location': loc, 'category': category}),
+                        # We're loading a descriptor, so student_id is meaningless
+                        # We also don't have separate notions of definition and usage ids yet,
+                        # so we use the location for both
+                        ScopeIds(None, category, loc, loc),
                     )
                     # VS[compat]:
                     # Hack because we need to pull in the 'display_name' for static tabs (because we need to edit them)
@@ -479,10 +491,12 @@ class XMLModuleStore(ModuleStoreBase):
                             if tab.get('url_slug') == slug:
                                 module.display_name = tab['name']
                     module.data_dir = course_dir
+                    module.save()
                     self.modules[course_descriptor.id][module.location] = module
                 except Exception, e:
-                    logging.exception("Failed to load {0}. Skipping... Exception: {1}".format(filepath, str(e)))
-                    system.error_tracker("ERROR: " + str(e))
+                    logging.exception("Failed to load %s. Skipping... \
+                            Exception: %s", filepath, unicode(e))
+                    system.error_tracker("ERROR: " + unicode(e))
 
     def get_instance(self, course_id, location, depth=0):
         """
@@ -505,12 +519,12 @@ class XMLModuleStore(ModuleStoreBase):
         except KeyError:
             raise ItemNotFoundError(location)
 
-    def has_item(self, location):
+    def has_item(self, course_id, location):
         """
         Returns True if location exists in this ModuleStore.
         """
         location = Location(location)
-        return any(location in course_modules for course_modules in self.modules.values())
+        return location in self.modules[course_id]
 
     def get_item(self, location, depth=0):
         """
@@ -601,3 +615,10 @@ class XMLModuleStore(ModuleStoreBase):
             raise ItemNotFoundError("{0} not in {1}".format(location, course_id))
 
         return self.parent_trackers[course_id].parents(location)
+
+    def get_modulestore_type(self, course_id):
+        """
+        Returns a type which identifies which modulestore is servicing the given
+        course_id. The return can be either "xml" (for XML based courses) or "mongo" for MongoDB backed courses
+        """
+        return XML_MODULESTORE_TYPE

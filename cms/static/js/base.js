@@ -253,21 +253,20 @@ function syncReleaseDate(e) {
     $("#start_time").val("");
 }
 
-function getEdxTimeFromDateTimeVals(date_val, time_val) {
-    if (date_val != '') {
-        if (time_val == '') time_val = '00:00';
-
-        return new Date(date_val + " " + time_val + "Z");
+function getDatetime(datepickerInput, timepickerInput) {
+    // given a pair of inputs (datepicker and timepicker), return a JS Date
+    // object that corresponds to the datetime that they represent. Assume
+    // UTC timezone, NOT the timezone of the user's browser.
+    var date = $(datepickerInput).datepicker("getDate");
+    var time = $(timepickerInput).timepicker("getTime");
+    if(date && time) {
+        return new Date(Date.UTC(
+            date.getFullYear(), date.getMonth(), date.getDate(),
+            time.getHours(), time.getMinutes()
+        ));
+    } else {
+        return null;
     }
-
-    else return null;
-}
-
-function getEdxTimeFromDateTimeInputs(date_id, time_id) {
-    var input_date = $('#' + date_id).val();
-    var input_time = $('#' + time_id).val();
-
-    return getEdxTimeFromDateTimeVals(input_date, input_time);
 }
 
 function autosaveInput(e) {
@@ -307,9 +306,17 @@ function saveSubsection() {
         metadata[$(el).data("metadata-name")] = el.value;
     }
 
-    // Piece back together the date/time UI elements into one date/time string
-    metadata['start'] = getEdxTimeFromDateTimeInputs('start_date', 'start_time');
-    metadata['due'] = getEdxTimeFromDateTimeInputs('due_date', 'due_time');
+    // get datetimes for start and due, stick into metadata
+    _(["start", "due"]).each(function(name) {
+
+        var datetime = getDatetime(
+            document.getElementById(name+"_date"),
+            document.getElementById(name+"_time")
+        );
+        // if datetime is null, we want to set that in metadata anyway;
+        // its an indication to the server to clear the datetime in the DB
+        metadata[name] = datetime;
+    });
 
     $.ajax({
         url: "/save_item",
@@ -388,7 +395,7 @@ function _deleteItem($el, type) {
                     });
 
                     var deleting = new CMS.Views.Notification.Mini({
-                        title: gettext('Deleting') + '&hellip;'
+                        title: gettext('Deleting&hellip;')
                     });
                     deleting.show();
 
@@ -414,11 +421,6 @@ function _deleteItem($el, type) {
     confirm.show();
 }
 
-function markAsLoaded() {
-    $('.upload-modal .copy-button').css('display', 'inline-block');
-    $('.upload-modal .progress-bar').addClass('loaded');
-}
-
 function hideModal(e) {
     if (e) {
         e.preventDefault();
@@ -427,7 +429,6 @@ function hideModal(e) {
     // of the editor. Users must press Cancel or Save to exit the editor.
     // module_edit adds and removes the "is-fixed" class.
     if (!$modalCover.hasClass("is-fixed")) {
-        $('.file-input').unbind('change', startUpload);
         $modal.hide();
         $modalCover.hide();
     }
@@ -598,80 +599,117 @@ function cancelNewSection(e) {
 function addNewCourse(e) {
     e.preventDefault();
     $('.new-course-button').addClass('is-disabled');
+    $('.new-course-save').addClass('is-disabled');
     var $newCourse = $('.wrapper-create-course').addClass('is-shown');
     var $cancelButton = $newCourse.find('.new-course-cancel');
-    $newCourse.find('.new-course-name').focus().select();
-    $newCourse.find('form').bind('submit', saveNewCourse);
+    var $courseName = $('.new-course-name');
+    $courseName.focus().select();
+    $('.new-course-save').on('click', saveNewCourse);
     $cancelButton.bind('click', cancelNewCourse);
     $body.bind('keyup', {
         $cancelButton: $cancelButton
     }, checkForCancel);
+
+    // Check that a course (org, number, run) doesn't use any special characters
+    var validateCourseItemEncoding = function(item) {
+        var required = validateRequiredField(item);
+        if(required) {
+            return required;
+        }
+        if(item !== encodeURIComponent(item)) {
+            return gettext('Please do not use any spaces or special characters in this field.');
+        }
+        return '';
+    };
+
+    // Ensure that org/course_num/run < 65 chars.
+    var validateTotalCourseItemsLength = function() {
+        var totalLength = _.reduce(
+            ['.new-course-org', '.new-course-number', '.new-course-run'],
+            function(sum, ele) {
+                return sum + $(ele).val().length;
+        }, 0
+        );
+        if(totalLength > 65) {
+            $('.wrap-error').addClass('is-shown');
+            $('#course_creation_error').html('<p>' + gettext('The combined length of the organization, course number, and course run fields cannot be more than 65 characters.') + '</p>');
+            $('.new-course-save').addClass('is-disabled');
+        }
+        else {
+            $('.wrap-error').removeClass('is-shown');
+        }
+    };
+
+    // Handle validation asynchronously
+    _.each(
+        ['.new-course-org', '.new-course-number', '.new-course-run'],
+        function(ele) {
+            var $ele = $(ele);
+            $ele.on('keyup', function(event) {
+                // Don't bother showing "required field" error when
+                // the user tabs into a new field; this is distracting
+                // and unnecessary
+                if(event.keyCode === 9) {
+                    return;
+                }
+                var error = validateCourseItemEncoding($ele.val());
+                setNewCourseFieldInErr($ele.parent('li'), error);
+                validateTotalCourseItemsLength();
+            });
+        }
+    );
+    var $name = $('.new-course-name');
+    $name.on('keyup', function() {
+        var error = validateRequiredField($name.val());
+        setNewCourseFieldInErr($name.parent('li'), error);
+        validateTotalCourseItemsLength();
+    });
 }
+
+function validateRequiredField(msg) {
+    return msg.length === 0 ? gettext('Required field.') : '';
+}
+
+function setNewCourseFieldInErr(el, msg) {
+    if(msg) {
+        el.addClass('error');
+        el.children('span.tip-error').addClass('is-showing').removeClass('is-hiding').text(msg);
+        $('.new-course-save').addClass('is-disabled');
+    }
+    else {
+        el.removeClass('error');
+        el.children('span.tip-error').addClass('is-hiding').removeClass('is-showing');
+        // One "error" div is always present, but hidden or shown
+        if($('.error').length === 1) {
+            $('.new-course-save').removeClass('is-disabled');
+        }
+    }
+};
 
 function saveNewCourse(e) {
     e.preventDefault();
+
+    // One final check for empty values
+    var errors = _.reduce(
+        ['.new-course-name', '.new-course-org', '.new-course-number', '.new-course-run'],
+        function(acc, ele) {
+            var $ele = $(ele);
+            var error = validateRequiredField($ele.val());
+            setNewCourseFieldInErr($ele.parent('li'), error);
+            return error ? true : acc;
+        },
+        false
+    );
+
+    if(errors) {
+        return;
+    }
 
     var $newCourseForm = $(this).closest('#create-course-form');
     var display_name = $newCourseForm.find('.new-course-name').val();
     var org = $newCourseForm.find('.new-course-org').val();
     var number = $newCourseForm.find('.new-course-number').val();
     var run = $newCourseForm.find('.new-course-run').val();
-
-    var required_field_text = gettext('Required field');
-
-    var display_name_errMsg = (display_name === '') ? required_field_text : null;
-    var org_errMsg = (org === '') ? required_field_text : null;
-    var number_errMsg = (number === '') ? required_field_text : null;
-    var run_errMsg = (run === '') ? required_field_text : null;
-
-    var bInErr = (display_name_errMsg || org_errMsg || number_errMsg || run_errMsg);
-
-    // check for suitable encoding
-    if (!bInErr) {
-        var encoding_errMsg = gettext('Please do not use any spaces or special characters in this field.');
-
-        if (encodeURIComponent(org) != org)
-            org_errMsg = encoding_errMsg;
-        if (encodeURIComponent(number) != number)
-            number_errMsg = encoding_errMsg;
-        if (encodeURIComponent(run) != run)
-            run_errMsg = encoding_errMsg;
-
-        bInErr = (org_errMsg || number_errMsg || run_errMsg);
-    }
-
-    var header_err_msg = (bInErr) ? gettext('Please correct the fields below.') : null;
-
-    var setNewCourseErrMsgs = function(header_err_msg, display_name_errMsg, org_errMsg, number_errMsg, run_errMsg) {
-        if (header_err_msg) {
-            $('.wrapper-create-course').addClass('has-errors');
-            $('.wrap-error').addClass('is-shown');
-            $('#course_creation_error').html('<p>' + header_err_msg + '</p>');
-        } else {
-            $('.wrap-error').removeClass('is-shown');
-            $('#course_creation_error').html('');
-        }
-
-        var setNewCourseFieldInErr = function(el, msg) {
-            el.children('.tip-error').remove();
-            if (msg !== null && msg !== '') {
-                el.addClass('error');
-                el.append('<span class="tip tip-error">' + msg + '</span>');
-            } else {
-                el.removeClass('error');
-            }
-        };
-
-        setNewCourseFieldInErr($('#field-course-name'), display_name_errMsg);
-        setNewCourseFieldInErr($('#field-organization'), org_errMsg);
-        setNewCourseFieldInErr($('#field-course-number'), number_errMsg);
-        setNewCourseFieldInErr($('#field-course-run'), run_errMsg);
-    };
-
-    setNewCourseErrMsgs(header_err_msg, display_name_errMsg, org_errMsg, number_errMsg, run_errMsg);
-
-    if (bInErr)
-        return;
 
     analytics.track('Created a Course', {
         'org': org,
@@ -690,9 +728,9 @@ function saveNewCourse(e) {
             if (data.id !== undefined) {
                 window.location = '/' + data.id.replace(/.*:\/\//, '');
             } else if (data.ErrMsg !== undefined) {
-                var orgErrMsg = (data.OrgErrMsg !== undefined) ? data.OrgErrMsg : null;
-                var courseErrMsg = (data.CourseErrMsg !== undefined) ? data.CourseErrMsg : null;
-                setNewCourseErrMsgs(data.ErrMsg, null, orgErrMsg, courseErrMsg, null);
+                $('.wrap-error').addClass('is-shown');
+                $('#course_creation_error').html('<p>' + data.ErrMsg + '</p>');
+                $('.new-course-save').addClass('is-disabled');
             }
         }
     );
@@ -702,6 +740,16 @@ function cancelNewCourse(e) {
     e.preventDefault();
     $('.new-course-button').removeClass('is-disabled');
     $('.wrapper-create-course').removeClass('is-shown');
+    // Clear out existing fields and errors
+    _.each(
+        ['.new-course-name', '.new-course-org', '.new-course-number', '.new-course-run'],
+        function(field) {
+            $(field).val('');
+        }
+    );
+    $('#course_creation_error').html('');
+    $('.wrap-error').removeClass('is-shown');
+    $('.new-course-save').off('click');
 }
 
 function addNewSubsection(e) {
@@ -772,21 +820,21 @@ function cancelSetSectionScheduleDate(e) {
 function saveSetSectionScheduleDate(e) {
     e.preventDefault();
 
-    var input_date = $('.edit-subsection-publish-settings .start-date').val();
-    var input_time = $('.edit-subsection-publish-settings .start-time').val();
-
-    var start = getEdxTimeFromDateTimeVals(input_date, input_time);
+    var datetime = getDatetime(
+        $('.edit-subsection-publish-settings .start-date'),
+        $('.edit-subsection-publish-settings .start-time')
+    );
 
     var id = $modal.attr('data-id');
 
     analytics.track('Edited Section Release Date', {
         'course': course_location_analytics,
         'id': id,
-        'start': start
+        'start': datetime
     });
 
     var saving = new CMS.Views.Notification.Mini({
-        title: gettext("Saving") + "&hellip;",
+        title: gettext("Saving&hellip;")
     });
     saving.show();
     // call into server to commit the new order
@@ -798,20 +846,29 @@ function saveSetSectionScheduleDate(e) {
         data: JSON.stringify({
             'id': id,
             'metadata': {
-                'start': start
+                'start': datetime
             }
         })
     }).success(function() {
+        var pad2 = function(number) {
+            // pad a number to two places: useful for formatting months, days, hours, etc
+            // when displaying a date/time
+            return (number < 10 ? '0' : '') + number;
+        };
+
         var $thisSection = $('.courseware-section[data-id="' + id + '"]');
         var html = _.template(
             '<span class="published-status">' +
                 '<strong>' + gettext("Will Release:") + '&nbsp;</strong>' +
-                gettext("<%= date %> at <%= time %> UTC") +
+                gettext("{month}/{day}/{year} at {hour}:{minute} UTC") +
             '</span>' +
-            '<a href="#" class="edit-button" data-date="<%= date %>" data-time="<%= time %>" data-id="<%= id %>">' +
+            '<a href="#" class="edit-button" data-date="{month}/{day}/{year}" data-time="{hour}:{minute}" data-id="{id}">' +
                 gettext("Edit") +
             '</a>',
-            {date: input_date, time: input_time, id: id});
+            {year: datetime.getUTCFullYear(), month: pad2(datetime.getUTCMonth() + 1), day: pad2(datetime.getUTCDate()),
+             hour: pad2(datetime.getUTCHours()), minute: pad2(datetime.getUTCMinutes()),
+             id: id},
+            {interpolate: /\{(.+?)\}/g});
         $thisSection.find('.section-published-date').html(html);
         hideModal();
         saving.hide();
